@@ -29,6 +29,8 @@ import random
 import xml.etree.ElementTree as ET
 import urllib.request
 import threading
+import socket
+import uuid
 import pyttsx3
 import tkinter as tk
 from tkinter import messagebox, filedialog
@@ -3315,6 +3317,14 @@ class ChaoHubApp:
         # Initialize Plant Module
         self.cyber_plant = None
 
+        # P2P LAN Node Discovery Mesh Initial State
+        self.instance_id = uuid.uuid4().hex
+        self.active_peers = {}
+        self.active_peers_lock = threading.Lock()
+        self.p2p_stop_event = threading.Event()
+        self.p2p_port = 28411
+        self.listener_socket = None
+
         # Backdoor Exit Hotkey: Ctrl+Shift+Q
         # Binds globally inside application to prevent trap lockouts
         self.root.bind("<Control-Shift-KeyPress-Q>", self.shutdown)
@@ -3409,9 +3419,14 @@ class ChaoHubApp:
         title_lbl = tk.Label(self.sidebar, text="CHAO_HUB v1.0", fg=FG_MAGENTA, bg=BG_PANEL, font=("Courier", 14, "bold"))
         title_lbl.pack(pady=15, padx=10)
 
+        # P2P Node Discovery Status Label
+        self.p2p_label = tk.Label(self.sidebar, text="OTHER NODES DETECTED: [00]", fg="#555555", bg=BG_PANEL, font=("Courier", 9, "bold"))
+        self.p2p_label.pack(pady=(0, 10))
+
         # Register main UI nodes to glitch temporal ticks
         self.glitch_manager.register_widget(self.sidebar, hover=False, click=False, temporal=True, magnitude=0.1)
         self.glitch_manager.register_widget(title_lbl, hover=True, click=True, temporal=True, magnitude=0.2)
+        self.glitch_manager.register_widget(self.p2p_label, hover=True, click=True, temporal=True, magnitude=0.15)
 
         # Navigation buttons mapping to class components
         self.modules = {
@@ -3457,6 +3472,10 @@ class ChaoHubApp:
 
         # Start jiggling thread for navigation panel (friction effect)
         self.jiggle_sidebar()
+
+        # Start P2P Mesh Threads and UI Pump
+        self.start_p2p_discovery()
+        self.update_p2p_ui()
         
         # Load default Books Module
         self.switch_module("ARCHIVE CONTRABAND")
@@ -3612,9 +3631,131 @@ class ChaoHubApp:
                 pass
             self.root.after(random.randint(900, 1600), self.jiggle_sidebar)
 
+    def start_p2p_discovery(self):
+        """Spins up the broadcaster and listener threads to manage node discovery."""
+        self.broadcaster_thread = threading.Thread(target=self._p2p_broadcaster, daemon=True)
+        self.listener_thread = threading.Thread(target=self._p2p_listener, daemon=True)
+        self.broadcaster_thread.start()
+        self.listener_thread.start()
+
+    def _p2p_broadcaster(self):
+        """Periodically broadcasts this instance's UUID to both local loopback and the wide broadcast address."""
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        
+        payload = f"CHAOHUB_PING_v1:{self.instance_id}".encode('utf-8')
+        targets = [("255.255.255.255", self.p2p_port), ("127.0.0.1", self.p2p_port)]
+        
+        while not self.p2p_stop_event.is_set():
+            for target in targets:
+                try:
+                    sock.sendto(payload, target)
+                except Exception:
+                    pass
+            # Sleep in short intervals to remain responsive to shutdown triggers
+            for _ in range(40):
+                if self.p2p_stop_event.is_set():
+                    break
+                time.sleep(0.1)
+        try:
+            sock.close()
+        except Exception:
+            pass
+
+    def _p2p_listener(self):
+        """Listens for CHAOHUB_PING packets from other nodes on the LAN/localhost."""
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        
+        bound = False
+        try:
+            sock.bind(("0.0.0.0", self.p2p_port))
+            bound = True
+        except socket.error as e:
+            print(f"[P2P Discovery] Port {self.p2p_port} bind failed: {e}. Falling back to listen-only / offset.")
+            # Try binding to alternative offset ports
+            for offset in range(1, 6):
+                try:
+                    sock.bind(("0.0.0.0", self.p2p_port + offset))
+                    bound = True
+                    break
+                except socket.error:
+                    pass
+                    
+        if not bound:
+            try:
+                sock.close()
+            except Exception:
+                pass
+            return
+            
+        self.listener_socket = sock
+        sock.settimeout(1.0)
+        
+        while not self.p2p_stop_event.is_set():
+            try:
+                data, addr = sock.recvfrom(1024)
+                message = data.decode('utf-8', errors='ignore')
+                if message.startswith("CHAOHUB_PING_v1:"):
+                    peer_uuid = message.split(":", 1)[1]
+                    if peer_uuid != self.instance_id:
+                        with self.active_peers_lock:
+                            self.active_peers[peer_uuid] = time.time()
+            except socket.timeout:
+                continue
+            except Exception:
+                break
+                
+        try:
+            sock.close()
+        except Exception:
+            pass
+
+    def update_p2p_ui(self):
+        """Thread-safe UI update pump running in the Tkinter main thread."""
+        if self.root_destroyed:
+            return
+            
+        now = time.time()
+        with self.active_peers_lock:
+            # TTL Loop: Prune peers that haven't broadcasted in the last 10 seconds
+            expired = [uuid for uuid, last_seen in self.active_peers.items() if now - last_seen > 10.0]
+            for uuid in expired:
+                del self.active_peers[uuid]
+            peer_count = len(self.active_peers)
+            
+        # Update text & active pulsing color schemes
+        if peer_count == 0:
+            self.p2p_label.config(text="OTHER NODES DETECTED: [00]", fg="#555555")
+        else:
+            # Alternating neon cyan and warning yellow for warning status indicators
+            color = FG_CYAN if (int(time.time() * 2) % 2 == 0) else FG_YELLOW
+            self.p2p_label.config(text=f"OTHER NODES DETECTED: [{peer_count:02d}]", fg=color)
+            
+        self.root.after(500, self.update_p2p_ui)
+
     def shutdown(self, event=None):
         """Safely stops music, releases hooks, and exits the application window."""
         self.root_destroyed = True
+        
+        # Stop P2P discovery loops
+        if hasattr(self, 'p2p_stop_event'):
+            self.p2p_stop_event.set()
+        
+        # Instantly close listener socket to unblock recvfrom()
+        if hasattr(self, 'listener_socket') and self.listener_socket:
+            try:
+                self.listener_socket.close()
+            except Exception:
+                pass
+                
+        # Join threads cleanly
+        if hasattr(self, 'broadcaster_thread') and self.broadcaster_thread:
+            self.broadcaster_thread.join(timeout=0.5)
+        if hasattr(self, 'listener_thread') and self.listener_thread:
+            self.listener_thread.join(timeout=0.5)
+            
         try:
             if self.current_frame and hasattr(self.current_frame, 'stop_tts_engine'):
                 self.current_frame.stop_tts_engine()
