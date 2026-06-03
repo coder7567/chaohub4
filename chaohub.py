@@ -36,6 +36,7 @@ from glitch_engine import GlitchManager
 from plant_system import CyberPlantManager
 from arcade_games import CyberBreak, NeonRunner
 from creative_suite import CreativeSuiteModule
+from hacker_chat import HackerChatModule
 
 # Initialize Pygame Mixer before doing anything else
 # Pygame mixer is used for background music and UI audio effects.
@@ -3420,7 +3421,8 @@ class ChaoHubApp:
             "DISTRACTION WIDGETS": lambda p: WidgetsModule(p, self.root),
             "ARCADE CORE": lambda p: GamesModule(p, self.glitch_manager),
             "CREATIVE SUITE": lambda p: CreativeSuiteModule(p),
-            "TERMINAL SHELL": lambda p: TerminalModule(p)
+            "TERMINAL SHELL": lambda p: TerminalModule(p),
+            "IRC CHAT ROOM": lambda p: HackerChatModule(p)
         }
 
         self.nav_buttons = {}
@@ -3569,6 +3571,16 @@ class ChaoHubApp:
             if hasattr(frame, "swatch_frames"):
                 for swatch_frame in frame.swatch_frames.values():
                     self.glitch_manager.register_widget(swatch_frame, magnitude=0.15)
+                    
+        elif module_name == "IRC CHAT ROOM":
+            if hasattr(frame, "log_widget"):
+                self.glitch_manager.register_widget(frame.log_widget, magnitude=0.15)
+            if hasattr(frame, "entry"):
+                self.glitch_manager.register_widget(frame.entry, magnitude=0.2)
+            if hasattr(frame, "sidebar_frame"):
+                for child in frame.sidebar_frame.winfo_children():
+                    if isinstance(child, tk.Button):
+                        self.glitch_manager.register_widget(child, magnitude=0.2)
 
     def switch_module(self, name):
         play_sound_effect("beep")
