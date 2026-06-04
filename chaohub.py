@@ -21,6 +21,7 @@ Contains a built-in WAV synthesizer that generates all necessary audio placehold
 
 import os
 import sys
+import importlib.util
 import time
 import math
 import wave
@@ -779,20 +780,26 @@ class SnakeGame(tk.Frame):
         border_color = ALERT_RED if self.difficulty == 4 else FG_GREEN
         
         if self.mode == "SINGLE":
-            self.snake = [(220, 140), (200, 140), (180, 140)]
-            self.direction = "Right"
-            self.next_direction = "Right"
-            self.score = 0
-            self.score_label.config(text="SCOREBOARD DETECTED: 0")
-            self.foods = []
-            self.glitch_blocks = []
-            self.phantom_snake = []
-            self.spawn_food()
-            self.draw()
+            final_score = self.score
+            
+            def proceed_game_over():
+                self.snake = [(220, 140), (200, 140), (180, 140)]
+                self.direction = "Right"
+                self.next_direction = "Right"
+                self.score = 0
+                self.score_label.config(text="SCOREBOARD DETECTED: 0")
+                self.foods = []
+                self.glitch_blocks = []
+                self.phantom_snake = []
+                self.spawn_food()
+                self.draw()
 
-            self.canvas.create_rectangle(20, 100, self.width - 20, 200, fill=BG_DARK, outline=border_color, width=3)
-            self.canvas.create_text(self.width // 2, 135, text="CONNECTION TERMINATED / GAME OVER", fill=border_color, font=("Courier", 12, "bold"))
-            self.canvas.create_text(self.width // 2, 165, text="PRESS ANY MOVE KEY TO RESTART CONNECTION", fill=FG_YELLOW, font=("Courier", 10))
+                self.canvas.create_rectangle(20, 100, self.width - 20, 200, fill=BG_DARK, outline=border_color, width=3)
+                self.canvas.create_text(self.width // 2, 135, text="CONNECTION TERMINATED / GAME OVER", fill=border_color, font=("Courier", 12, "bold"))
+                self.canvas.create_text(self.width // 2, 165, text="PRESS ANY MOVE KEY TO RESTART CONNECTION", fill=FG_YELLOW, font=("Courier", 10))
+
+            from leaderboard import check_and_intercept_score
+            check_and_intercept_score(self, "SNAKE PROTOCOL", self.difficulty, final_score, proceed_game_over)
         else:
             self.snake1 = [(100, 140), (80, 140), (60, 140)]
             self.direction1 = "Right"
@@ -1121,14 +1128,20 @@ class PongGame(tk.Frame):
         
         if self.mode == "SINGLE":
             winner = "PLAYER (USER)" if self.player_score >= 5 else "AI INTRUSION MATRIX"
-            self.player_score = 0
-            self.ai_score = 0
-            self.reset_ball()
-            self.draw()
+            final_score = self.player_score
+            
+            def proceed_game_over():
+                self.player_score = 0
+                self.ai_score = 0
+                self.reset_ball()
+                self.draw()
 
-            self.canvas.create_rectangle(20, 100, self.width - 20, 200, fill=BG_DARK, outline=FG_GREEN, width=3)
-            self.canvas.create_text(self.width // 2, 130, text=f"VICTORY STATE ACHIEVED: {winner}", fill=FG_GREEN, font=("Courier", 10, "bold"))
-            self.canvas.create_text(self.width // 2, 165, text="PRESS W, S, UP OR DOWN TO RE-CONNECT MATCH", fill=FG_YELLOW, font=("Courier", 9))
+                self.canvas.create_rectangle(20, 100, self.width - 20, 200, fill=BG_DARK, outline=FG_GREEN, width=3)
+                self.canvas.create_text(self.width // 2, 130, text=f"VICTORY STATE ACHIEVED: {winner}", fill=FG_GREEN, font=("Courier", 10, "bold"))
+                self.canvas.create_text(self.width // 2, 165, text="PRESS W, S, UP OR DOWN TO RE-CONNECT MATCH", fill=FG_YELLOW, font=("Courier", 9))
+
+            from leaderboard import check_and_intercept_score
+            check_and_intercept_score(self, "PONG GLITCH", self.difficulty, final_score, proceed_game_over)
         else:
             winner = "PLAYER 1 (CYAN)" if self.player_score >= 5 else "PLAYER 2 (MAGENTA)"
             self.player_score = 0
@@ -1189,6 +1202,7 @@ class MinesweeperGame(tk.Frame):
         self.game_over_state = False
         self.victory_state = False
         self.mines_planted = False
+        self.start_time = None
         
         fg_color = ALERT_RED if self.difficulty == 4 else FG_GREEN
         self.status_label.config(text="DEFUSE SYSTEM: ARMED", fg=fg_color)
@@ -1242,6 +1256,7 @@ class MinesweeperGame(tk.Frame):
                 self.grid[r][c] = mines
                 
         self.mines_planted = True
+        self.start_time = time.time()
         
         # Start the Tier 4 corrupted timer countdown if active
         if self.difficulty == 4:
@@ -1397,6 +1412,16 @@ class MinesweeperGame(tk.Frame):
                 
             self.status_label.config(text="VICTORY! FIREWORKS SECURED", fg=FG_CYAN if self.difficulty != 4 else ALERT_RED)
             play_sound_effect("beep")
+            
+            if getattr(self, "start_time", None) is not None:
+                elapsed_time = int(time.time() - self.start_time)
+            else:
+                elapsed_time = 0
+                
+            self.draw()
+            
+            from leaderboard import check_and_intercept_score
+            check_and_intercept_score(self, "DEFUSE FIREWORK", self.difficulty, elapsed_time)
 
     def draw(self):
         self.canvas.delete("all")
@@ -2760,12 +2785,41 @@ class GamesModule(tk.Frame):
             btn.pack(side="left", padx=10, pady=5)
             self.buttons[name] = btn
 
+        # Add LEADERBOARD MATRIX button
+        self.leaderboard_btn = tk.Button(self.tabs_frame, text="[ LEADERBOARD MATRIX ]", command=self.switch_to_leaderboard,
+                                         bg=BG_DARK, fg=FG_GREEN, activebackground=FG_GREEN, activeforeground=BG_DARK,
+                                         font=("Courier", 10, "bold"), bd=1)
+        self.leaderboard_btn.pack(side="left", padx=10, pady=5)
+        self.buttons["LEADERBOARD MATRIX"] = self.leaderboard_btn
+
         # Container for the active game canvas
         self.game_container = tk.Frame(self, bg=BG_DARK)
         self.game_container.pack(fill="both", expand=True, padx=10, pady=10)
 
         # Start with Snake pre-game selection
         self.switch_game(SnakeGame, "SNAKE PROTOCOL")
+
+    def switch_to_leaderboard(self):
+        try:
+            pygame.mixer.stop()
+            pygame.mixer.music.stop()
+        except Exception:
+            pass
+        play_sound_effect("click")
+        if self.current_game_frame:
+            self.current_game_frame.destroy()
+
+        # Update button colors
+        for name, btn in self.buttons.items():
+            if name == "LEADERBOARD MATRIX":
+                btn.config(bg=FG_GREEN, fg=BG_DARK)
+            else:
+                btn.config(bg=BG_DARK, fg=FG_GREEN)
+
+        # Instantiate LeaderboardModule inside self.game_container
+        from leaderboard import LeaderboardModule
+        self.current_game_frame = LeaderboardModule(self.game_container, glitch_manager=self.glitch_manager)
+        self.current_game_frame.pack(fill="both", expand=True)
 
     def switch_game(self, game_class, game_name):
         # Audio State Sanitation: complete clean flush sequence
@@ -3301,6 +3355,134 @@ class BootCinematic(tk.Frame):
         self.completion_callback()
 
 # ==============================================================================
+# RUNTIME DYNAMIC MODLOADER & PROXY WRAPPER (SANDBOXED EXCEPTION SHIELD)
+# ==============================================================================
+class ChaoHubAppProxy:
+    """
+    A security shield wrapper around the main ChaoHubApp memory tree.
+    Provides clear, clean hook points for mod developers while protecting internal loop threads.
+    """
+    def __init__(self, app_instance):
+        self._app = app_instance
+
+    @property
+    def root(self):
+        """Access the main Tkinter root window."""
+        return self._app.root
+
+    @property
+    def glitch_manager(self):
+        """Access the glitch effect core registry."""
+        return self._app.glitch_manager
+
+    @property
+    def main_container(self):
+        """Access the main viewport container frame."""
+        return self._app.main_container
+
+    def add_sidebar_tab(self, tab_name, entry_class):
+        """
+        Dynamically registers a custom layout module.
+        """
+        self._app.modules[tab_name] = lambda parent: entry_class(parent, self._app)
+
+class ModLoader:
+    def __init__(self, app_instance):
+        self.app_instance = app_instance
+        self.mods = []
+        self.mods_dir = os.path.join(os.path.expanduser("~"), "ChaoHub_Data", "mods")
+        self.verify_and_initialize_directory()
+
+    def verify_and_initialize_directory(self):
+        """Creates mods folder if not present, and populates with placeholder instructions."""
+        if not os.path.exists(self.mods_dir):
+            try:
+                os.makedirs(self.mods_dir, exist_ok=True)
+                readme_path = os.path.join(self.mods_dir, "README.txt")
+                with open(readme_path, "w", encoding="utf-8") as f:
+                    f.write(
+                        "ChaoHub Modding Interface Instructions\n"
+                        "=====================================\n\n"
+                        "This folder contains runtime-dynamic ChaoHub mods.\n"
+                        "To write a mod for ChaoHub, create a Python (.py) file in this directory.\n"
+                        "The script must export a top-level dictionary named 'CHAO_MOD_MANIFEST' containing:\n"
+                        "  - 'name': The human-readable name of your mod.\n"
+                        "  - 'author': The creator of the mod.\n"
+                        "  - 'version': Semver string of the mod.\n"
+                        "  - 'type': 'NEW_MODULE' (nav tab) or 'VISUAL_EFFECT' (theme modification).\n"
+                        "  - 'entry_point': The name of the class to instantiate.\n\n"
+                        "Your entry class must implement:\n"
+                        "  - initialize(self, app_instance): Hook called when mod starts.\n"
+                        "  - teardown(self): Hook called during system shutdown.\n"
+                    )
+            except Exception as e:
+                print(f"Error initializing mods directory: {e}")
+
+    def load_mods(self):
+        """Programmatically loads modules using importlib.util under aggressive exception shielding."""
+        if not os.path.exists(self.mods_dir):
+            return
+
+        for filename in os.listdir(self.mods_dir):
+            if filename.endswith(".py"):
+                file_path = os.path.join(self.mods_dir, filename)
+                mod_name = os.path.splitext(filename)[0]
+
+                try:
+                    spec = importlib.util.spec_from_file_location(mod_name, file_path)
+                    if spec is None or spec.loader is None:
+                        raise ImportError(f"Unable to resolve spec from path: {file_path}")
+                    
+                    module = importlib.util.module_from_spec(spec)
+                    spec.loader.exec_module(module)
+
+                    # Validate Manifest Interface
+                    if not hasattr(module, "CHAO_MOD_MANIFEST"):
+                        raise AttributeError("Top-level dict 'CHAO_MOD_MANIFEST' not found")
+                    
+                    manifest = module.CHAO_MOD_MANIFEST
+                    required_keys = ["name", "author", "version", "type", "entry_point"]
+                    for rk in required_keys:
+                        if rk not in manifest:
+                            raise KeyError(f"Manifest missing required key: '{rk}'")
+                    
+                    entry_class_name = manifest["entry_point"]
+                    if not hasattr(module, entry_class_name):
+                        raise AttributeError(f"Entry class name '{entry_class_name}' not defined in module")
+                    
+                    entry_class = getattr(module, entry_class_name)
+                    
+                    # Instantiate with fallback arguments for parent and app_instance
+                    try:
+                        mod_instance = entry_class()
+                    except TypeError:
+                        try:
+                            mod_instance = entry_class(None, None)
+                        except TypeError:
+                            mod_instance = entry_class(None)
+                    
+                    if not hasattr(mod_instance, "initialize") or not hasattr(mod_instance, "teardown"):
+                        raise TypeError("Mod class must implement initialize(app_instance) and teardown()")
+
+                    self.mods.append({
+                        "manifest": manifest,
+                        "instance": mod_instance,
+                        "module": module,
+                        "file_path": file_path
+                    })
+                except Exception as e:
+                    import traceback
+
+                    error_path = os.path.join(self.mods_dir, "mod_errors.log")
+
+                    with open(error_path, "a", encoding="utf-8") as f:
+                        f.write("\n" + "=" * 80 + "\n")
+                        f.write(f"MOD: {mod_name}\n")
+                        traceback.print_exc(file=f)
+
+                    print(f"MOD FAILED: {mod_name}")
+
+# ==============================================================================
 # MAIN APPLICATION SHELL
 # ==============================================================================
 class ChaoHubApp:
@@ -3315,6 +3497,24 @@ class ChaoHubApp:
         # Initialize Glitch Manager
         self.glitch_manager = GlitchManager(self.root)
         self.glitch_manager.set_mouse_trail(True)
+
+        # Initialize ModLoader and load mods
+        self.mod_loader = ModLoader(self)
+        self.mod_loader.load_mods()
+        
+        # Initialize each loaded mod with proxy wrapper
+
+        print("Loaded mods:")
+        for mod in self.mod_loader.mods:
+                print(mod["manifest"]["name"])
+
+        for mod in self.mod_loader.mods:
+            try:
+                proxy = ChaoHubAppProxy(self)
+                mod["instance"].initialize(proxy)
+            except Exception as e:
+                print(f"[MOD INITIALIZE ERROR: '{mod['manifest'].get('name')}' FAILED - BYPASSING]")
+                print(f"Details: {e}")
 
         # Initialize Plant Module
         self.cyber_plant = None
@@ -3442,6 +3642,14 @@ class ChaoHubApp:
             "IRC CHAT ROOM": lambda p: HackerChatModule(p),
             "CHAONET PROXY": lambda p: ChaoNetModule(p, self.glitch_manager)
         }
+
+        # Append dynamic navigation tabs from loaded mods (Vector A)
+        for mod in self.mod_loader.mods:
+            manifest = mod["manifest"]
+            if manifest.get("type") == "NEW_MODULE":
+                entry_class = getattr(mod["module"], manifest["entry_point"])
+                if manifest["name"] not in self.modules:
+                    self.modules[manifest["name"]] = lambda p, cls=entry_class: cls(p, self)
 
         self.nav_buttons = {}
         for name in self.modules.keys():
@@ -3613,6 +3821,16 @@ class ChaoHubApp:
                 self.glitch_manager.register_widget(frame.refresh_btn, magnitude=0.2)
             if hasattr(frame, "connect_btn"):
                 self.glitch_manager.register_widget(frame.connect_btn, magnitude=0.2)
+        else:
+            # Fallback auto-registration for custom loaded mods (Vector A)
+            try:
+                widgets = [frame]
+                widgets.extend(frame.winfo_children())
+                for w in widgets:
+                    if isinstance(w, (tk.Button, tk.Label, tk.Canvas)):
+                        self.glitch_manager.register_widget(w, hover=True, click=True, temporal=True, magnitude=0.20)
+            except Exception:
+                pass
 
     def switch_module(self, name):
         play_sound_effect("beep")
@@ -3752,6 +3970,14 @@ class ChaoHubApp:
         """Safely stops music, releases hooks, and exits the application window."""
         self.root_destroyed = True
         
+        # Clean teardown for all loaded mods
+        if hasattr(self, "mod_loader") and self.mod_loader:
+            for mod in self.mod_loader.mods:
+                try:
+                    mod["instance"].teardown()
+                except Exception as e:
+                    print(f"Error during teardown of mod {mod['manifest'].get('name', 'unknown')}: {e}")
+
         # Stop P2P discovery loops
         if hasattr(self, 'p2p_stop_event'):
             self.p2p_stop_event.set()
