@@ -39,6 +39,8 @@ from plant_system import CyberPlantManager
 from arcade_games import CyberBreak, NeonRunner
 from creative_suite import CreativeSuiteModule
 from hacker_chat import HackerChatModule
+from chaonet_browser import ChaoNetModule
+
 
 # Initialize Pygame Mixer before doing anything else
 # Pygame mixer is used for background music and UI audio effects.
@@ -3437,7 +3439,8 @@ class ChaoHubApp:
             "ARCADE CORE": lambda p: GamesModule(p, self.glitch_manager),
             "CREATIVE SUITE": lambda p: CreativeSuiteModule(p),
             "TERMINAL SHELL": lambda p: TerminalModule(p),
-            "IRC CHAT ROOM": lambda p: HackerChatModule(p)
+            "IRC CHAT ROOM": lambda p: HackerChatModule(p),
+            "CHAONET PROXY": lambda p: ChaoNetModule(p, self.glitch_manager)
         }
 
         self.nav_buttons = {}
@@ -3600,6 +3603,16 @@ class ChaoHubApp:
                 for child in frame.sidebar_frame.winfo_children():
                     if isinstance(child, tk.Button):
                         self.glitch_manager.register_widget(child, magnitude=0.2)
+                        
+        elif module_name == "CHAONET PROXY":
+            if hasattr(frame, "address_entry"):
+                self.glitch_manager.register_widget(frame.address_entry, magnitude=0.15)
+            if hasattr(frame, "back_btn"):
+                self.glitch_manager.register_widget(frame.back_btn, magnitude=0.2)
+            if hasattr(frame, "refresh_btn"):
+                self.glitch_manager.register_widget(frame.refresh_btn, magnitude=0.2)
+            if hasattr(frame, "connect_btn"):
+                self.glitch_manager.register_widget(frame.connect_btn, magnitude=0.2)
 
     def switch_module(self, name):
         play_sound_effect("beep")
